@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 #
 # dns_compare.py - Compare the data in a BIND zone file to the data being returned
 #                  by an authoritative DNS server.
@@ -32,6 +32,18 @@ from optparse import OptionParser
 
 import sys, socket
 from pprint import pprint
+from rich import print
+from rich import box
+from rich.color import Color
+from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
+from rich.markdown import Markdown
+from rich.measure import Measurement
+from rich.pretty import Pretty
+from rich.segment import Segment
+from rich.style import Style
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text
 
 try:
     import dns.resolver, dns.zone
@@ -44,10 +56,24 @@ except ImportError:
     sys.exit(1)
 
 
+#####Definitions#############################
+
+
+console = Console()
+main_resolver = dns.resolver.Resolver()
+
+
+######Debug###################################
+
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning) 
+
+######Main####################################
+
 if __name__ == '__main__':
     parser = OptionParser()
     # required options
-    parser.add_option("-z", "--zone", dest="zone", metavar="DOMAIN",
+    parser.add_option("-u", "--url", dest="zone", metavar="DOMAIN",
                         help="name of the domain we're checking (eg: domain.com)")
     parser.add_option("-f", "--file", dest="zonefile", metavar="FILE",
                         help="zone file to load records from")
@@ -60,7 +86,7 @@ if __name__ == '__main__':
                         help="compare SOA records (default: false)")
     parser.add_option("-n","--ns", dest="compare_ns", action="store_true", default=False,
                         help="compare NS records (default: false)")
-    parser.add_option("-t","--ttl", dest="compare_ttl", action="store_false", default=True,
+    parser.add_option("-t","--ttl", dest="compare_ttl", action="store_false", default=False,
                         help="compare TTL values (default: true)")
     parser.add_option("-c","--cname", dest="lookup_cnames", action="store_true", default=False,
                         help="lookup cname-values that do not match (default: false)")
@@ -70,14 +96,16 @@ if __name__ == '__main__':
     if opts.zone == None or opts.zonefile == None or opts.nameserver == None:
         print("Error: required arguments: --zone, --file, --server (or --help)")
         sys.exit(2)
-
+       
+    
     z = dns.zone.from_file(opts.zonefile, origin=opts.zone, relativize=False)
-
+    
     r = dns.resolver.Resolver(configure=False)
+
     try:
         r.nameservers = socket.gethostbyname_ex(opts.nameserver)[2]
     except socket.error:
-        print("Error: could not resolve 'host' %s" % opts.nameserver)
+        console.print("Error: could not resolve 'host' %s" % opts.nameserver, style="bold red")
         sys.exit(3)
 
     matches=0
@@ -93,6 +121,7 @@ if __name__ == '__main__':
         result = None
         try:
             ans = r.query(name, rdataset.rdtype, rdataset.rdclass)
+            #ans = main_resolver.resolve(name, rdataset.rdtype, rdataset.rdclass)
             result = ans.rrset.to_rdataset()
             if result == rdataset:
                 if opts.compare_ttl:
@@ -111,27 +140,27 @@ if __name__ == '__main__':
                 result_cname = ans_cname.rrset.to_rdataset()
                 print("----")
                 if result_cname == result_a:
-                    print("(%s) query: %s" % ("CName-Match", name))
+                    print("(%s) query: %s" % ("[reverse][honeydew2] CNAME MATCH [/honeydew2][/]", name))
                     cnamematches += 1
                 else:
-                    print("(%s) query: %s" % ("MIS-Match", name))
+                    print("(%s) query: %s" % ("[reverse][red] MISMATCH [/red][/]", name))
                     mismatches += 1
                 print("Expected: ", rdataset, ' (', result_cname, ')')
-                print("Received: ", result_a)
+                print("Received: ", result_a, "\n")
                 pass
 
         if opts.verbose:
-            description = 'Match' if match else 'MIS-MATCH'
-            print("----")
-            print("(%s) query: %s" % (description, name))
+            description = '[reverse][spring_green3] OK [/spring_green3][/]' if match else '[reverse][red] MISMATCH [/red][/]'
+            #print("[red]----[/red]")
+            print("%s [green]Query:[/green][misty_rose1] %s[/misty_rose1]" % (description, name))
             if result != None and len(result) > 1:
                 print("Expected:")
                 print(rdataset)
-                print("Received: ")
+                print("Received: ", "\n")
                 print(result)
             else:
                 print("Expected: ", rdataset)
-                print("Received: ", result)
+                print("Received: ", result, "\n")
 
         if match:
             if not opts.verbose:
@@ -140,22 +169,24 @@ if __name__ == '__main__':
             matches += 1
         else:
             if not opts.verbose:
-                sys.stdout.write('X')
-                print("\n(MIS-MATCH) query: %s" % name)
+                #sys.stdout.write('X')            #
+                #console.print(':cross_mark:')    # Debug these  
+                #print("[grey93]----[/grey93]")   # 
+                print("[reverse][red]\n MISMATCH [/red][/][green] Query:[/green][misty_rose1] %s[/misty_rose1]" % name)
                 if result != None and len(result) > 1:
                     print("Expected:")
                     print(rdataset)
-                    print("Received: ")
+                    print("Received: ", "\n")
                     print(result)
                 else:
                     print("Expected: ", rdataset)
-                    print("Received: ", result)
+                    print("Received: ", result, "\n")
                 sys.stdout.flush()
             mismatches += 1
-    print("done")
+    print("[reverse][dark_sea_green2]\n Finished! [/dark_sea_green2][/]")
 
-    print("\nResults:")
-    print("Matches:       ", matches)
+    print("[underline][navajo_white1]\nResults[/navajo_white1][/]")
+    print("[dark_sea_green3]Matches:       [/dark_sea_green3]", matches)
     if opts.lookup_cnames and cnamematches > 0:
-        print("CName-matches: ", cnamematches)
-    print("Mis-matches:   ", mismatches)
+        print("[green_yellow]CName matches: [/green_yellow]", cnamematches)
+    print("[pale_violet_red1]Mismatches:   [/pale_violet_red1]", mismatches)
